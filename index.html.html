@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#38BDF8">
+<title>Balloon Pop 2D</title>
+<style>
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  }
+  body {
+    overflow: hidden;
+    background: linear-gradient(180deg, #38BDF8 0%, #BAE6FD 65%, #86EFAC 100%);
+    height: 100vh;
+    width: 100vw;
+    position: relative;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
+  }
+
+  /* HUD Top Bar */
+  #hud {
+    position: absolute;
+    top: 15px;
+    left: 15px;
+    right: 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .badge {
+    background: rgba(255, 255, 255, 0.9);
+    padding: 8px 18px;
+    border-radius: 30px;
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: #0F172A;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+    border: 3px solid #F59E0B;
+  }
+  .lives {
+    border-color: #EF4444;
+    color: #DC2626;
+  }
+
+  /* Overlay Screens (Start & Game Over) */
+  .overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.65);
+    backdrop-filter: blur(4px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+    text-align: center;
+    padding: 20px;
+  }
+  .card {
+    background: white;
+    padding: 30px 25px;
+    border-radius: 28px;
+    max-width: 360px;
+    width: 100%;
+    box-shadow: 0 15px 35px rgba(0,0,0,0.3);
+    border: 5px solid #38BDF8;
+  }
+  h1 {
+    font-size: 2.2rem;
+    color: #EC4899;
+    margin-bottom: 10px;
+    text-shadow: 2px 2px 0 #FDE047;
+  }
+  p {
+    color: #475569;
+    font-size: 1rem;
+    margin-bottom: 18px;
+    line-height: 1.4;
+  }
+  .legend {
+    display: flex;
+    justify-content: space-around;
+    background: #F8FAFC;
+    padding: 10px;
+    border-radius: 15px;
+    margin-bottom: 20px;
+    font-size: 0.9rem;
+    font-weight: bold;
+    color: #334155;
+  }
+  .play-btn {
+    background: linear-gradient(135deg, #22C55E, #16A34A);
+    color: white;
+    border: none;
+    padding: 15px 40px;
+    font-size: 1.4rem;
+    font-weight: 800;
+    border-radius: 50px;
+    cursor: pointer;
+    box-shadow: 0 6px 0 #15803D;
+    transition: transform 0.1s;
+    width: 100%;
+  }
+  .play-btn:active {
+    transform: translateY(4px);
+    box-shadow: 0 2px 0 #15803D;
+  }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div class="badge">⭐ <span id="score">0</span></div>
+  <div class="badge" style="border-color:#3B82F6;">🏆 <span id="best">0</span></div>
+  <div class="badge lives" id="lives-display">❤️❤️❤️</div>
+</div>
+
+<!-- START SCREEN -->
+<div id="start-screen" class="overlay">
+  <div class="card">
+    <h1>🎈 Balloon Pop 2D</h1>
+    <p>Tap balloons before they fly away!</p>
+    <div class="legend">
+      <div>🎈 +10</div>
+      <div>🌟 +30</div>
+      <div>💣 -1 Life</div>
+    </div>
+    <button class="play-btn" onclick="startGame()">PLAY ▶</button>
+  </div>
+</div>
+
+<!-- GAME OVER SCREEN -->
+<div id="gameover-screen" class="overlay" style="display:none;">
+  <div class="card">
+    <h1 style="color:#EF4444;">Game Over!</h1>
+    <p style="font-size:1.3rem; font-weight:bold; color:#0F172A;">
+      Score: <span id="final-score">0</span><br>
+      Best: <span id="final-best">0</span>
+    </p>
+    <button class="play-btn" onclick="startGame()">PLAY AGAIN 🔄</button>
+  </div>
+</div>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+
+  let width, height;
+  function resize() {
+    width = canvas.width = window.innerWidth;
+    height = canvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // Audio Engine
+  let audioCtx = null;
+  function initAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+
+  function playPop(isGold = false) {
+    initAudio();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = isGold ? 'triangle' : 'sine';
+    osc.frequency.setValueAtTime(isGold ? 520 : 350, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(isGold ? 980 : 750, audioCtx.currentTime + 0.12);
+    gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.12);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.12);
+  }
+
+  function playBoom() {
+    initAudio();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(140, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.3);
+    gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.3);
+  }
+
+  // Game Variables
+  let balloons = [];
+  let particles = [];
+  let floatingTexts = [];
+  let clouds = [];
+  let score = 0;
+  let bestScore = localStorage.getItem('balloonBest2D') || 0;
+  let lives = 3;
+  let gameRunning = false;
+  let spawnTimer = 0;
+  let speedMultiplier = 1;
+
+  document.getElementById('best').innerText = bestScore;
+
+  // Background Clouds
+  for (let i = 0; i < 6; i++) {
+    clouds.push({
+      x: Math.random() * width,
+      y: Math.random() * (height * 0.6),
+      speed: 0.2 + Math.random() * 0.4,
+      scale: 0.6 + Math.random() * 0.7
+    });
+  }
+
+  const colors = ['#FF477E', '#FF9F1C', '#2EC4B6', '#3B82F6', '#A855F7', '#EF4444'];
+
+  function spawnBalloon() {
+    const rand = Math.random();
+    let type = 'normal';
+    let color = colors[Math.floor(Math.random() * colors.length)];
+    let radius = Math.min(44, Math.max(32, width * 0.085));
+
+    if (rand < 0.14) {
+      type = 'gold';
+      color = '#FACC15';
+      radius *= 0.9;
+    } else if (rand > 0.84 && score >= 30) {
+      type = 'bomb';
+      color = '#1E293B';
+    }
+
+    balloons.push({
+      x: radius + Math.random() * (width - radius * 2),
+      y: height + radius + 20,
+      radius: radius,
+      speed: (2.2 + Math.random() * 1.8) * speedMultiplier,
+      wobbleOffset: Math.random() * Math.PI * 2,
+      color: color,
+      type: type
+    });
+  }
+
+  function createExplosion(x, y, color) {
+    for (let i = 0; i < 16; i++) {
+      const angle = (Math.PI * 2 * i) / 16;
+      const speed = 2 + Math.random() * 5;
+      particles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        color,
+        alpha: 1,
+        size: 4 + Math.random() * 5
+      });
+    }
+  }
+
+  function addFloatingText(x, y, text, color) {
+    floatingTexts.push({ x, y, text, color, alpha: 1 });
+  }
+
+  function updateLives() {
+    document.getElementById('lives-display').innerText = '❤️'.repeat(Math.max(0, lives)) || '💔';
+  }
+
+  function startGame() {
+    initAudio();
+    balloons = [];
+    particles = [];
+    floatingTexts = [];
+    score = 0;
+    lives = 3;
+    speedMultiplier = 1;
+    spawnTimer = 0;
+    gameRunning = true;
+
+    document.getElementById('score').innerText = 0;
+    updateLives();
+    document.getElementById('start-screen').style.display = 'none';
+    document.getElementById('gameover-screen').style.display = 'none';
+    requestAnimationFrame(gameLoop);
+  }
+
+  function endGame() {
+    gameRunning = false;
+    if (score > bestScore) {
+      bestScore = score;
+      localStorage.setItem('balloonBest2D', bestScore);
+      document.getElementById('best').innerText = bestScore;
+    }
+    document.getElementById('final-score').innerText = score;
+    document.getElementById('final-best').innerText = bestScore;
+    document.getElementById('gameover-screen').style.display = 'flex';
+  }
+
+  // Handle Tap / Click
+  function handleInput(clientX, clientY) {
+    if (!gameRunning) return;
+    const rect = canvas.getBoundingClientRect();
+    const tapX = clientX - rect.left;
+    const tapY = clientY - rect.top;
+
+    for (let i = balloons.length - 1; i >= 0; i--) {
+      const b = balloons[i];
+      const dist = Math.hypot(tapX - b.x, tapY - b.y);
+      if (dist <= b.radius * 1.2) {
+        balloons.splice(i, 1);
+        if (b.type === 'bomb') {
+          playBoom();
+          createExplosion(b.x, b.y, '#EF4444');
+          addFloatingText(b.x, b.y, '💥 -1 Life', '#DC2626');
+          lives--;
+          updateLives();
+          if (lives <= 0) endGame();
+        } else {
+          const pts = b.type === 'gold' ? 30 : 10;
+          playPop(b.type === 'gold');
+          createExplosion(b.x, b.y, b.color);
+          addFloatingText(b.x, b.y, `+${pts}`, b.type === 'gold' ? '#CA8A04' : '#16A34A');
+          score += pts;
+          document.getElementById('score').innerText = score;
+          speedMultiplier = 1 + Math.floor(score / 100) * 0.15;
+        }
+        break;
+      }
+    }
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    handleInput(e.clientX, e.clientY);
+  });
+
+  function drawCloud(c) {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, 25 * c.scale, 0, Math.PI * 2);
+    ctx.arc(c.x + 22 * c.scale, c.y - 8 * c.scale, 30 * c.scale, 0, Math.PI * 2);
+    ctx.arc(c.x + 48 * c.scale, c.y, 24 * c.scale, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawBalloon(b) {
+    ctx.save();
+    ctx.translate(b.x, b.y);
+
+    // String
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, b.radius * 1.15);
+    ctx.quadraticCurveTo(8, b.radius * 1.5, -4, b.radius * 1.9);
+    ctx.stroke();
+
+    // Knot
+    ctx.fillStyle = b.color;
+    ctx.beginPath();
+    ctx.moveTo(-6, b.radius * 1.12);
+    ctx.lineTo(6, b.radius * 1.12);
+    ctx.lineTo(0, b.radius * 1.24);
+    ctx.closePath();
+    ctx.fill();
+
+    // Balloon Oval
+    ctx.beginPath();
+    ctx.ellipse(0, 0, b.radius * 0.92, b.radius * 1.12, 0, 0, Math.PI * 2);
+    ctx.fillStyle = b.color;
+    ctx.fill();
+
+    // Shine reflection
+    ctx.beginPath();
+    ctx.ellipse(-b.radius * 0.3, -b.radius * 0.35, b.radius * 0.16, b.radius * 0.32, -0.4, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+    ctx.fill();
+
+    // Icons for Special Balloons
+    if (b.type === 'gold') {
+      ctx.font = `${b.radius * 0.8}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('⭐', 0, 2);
+    } else if (b.type === 'bomb') {
+      ctx.font = `${b.radius * 0.85}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('💣', 0, 2);
+    }
+
+    ctx.restore();
+  }
+
+  function gameLoop() {
+    if (!gameRunning) return;
+    ctx.clearRect(0, 0, width, height);
+
+    // Move & Draw Clouds
+    clouds.forEach(c => {
+      c.x += c.speed;
+      if (c.x > width + 80) c.x = -80;
+      drawCloud(c);
+    });
+
+    // Spawn Balloons
+    spawnTimer++;
+    const spawnRate = Math.max(22, 52 - Math.floor(score / 40));
+    if (spawnTimer >= spawnRate) {
+      spawnBalloon();
+      spawnTimer = 0;
+    }
+
+    // Update & Draw Balloons
+    for (let i = balloons.length - 1; i >= 0; i--) {
+      const b = balloons[i];
+      b.y -= b.speed;
+      b.x += Math.sin(b.y * 0.02 + b.wobbleOffset) * 0.8;
+      drawBalloon(b);
+
+      // Missed normal/gold balloon
+      if (b.y < -b.radius * 1.5) {
+        balloons.splice(i, 1);
+        if (b.type !== 'bomb') {
+          lives--;
+          updateLives();
+          if (lives <= 0) endGame();
+        }
+      }
+    }
+
+    // Update & Draw Particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.alpha -= 0.03;
+      if (p.alpha <= 0) {
+        particles.splice(i, 1);
+      } else {
+        ctx.globalAlpha = p.alpha;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // Update & Draw Floating Texts
+    for (let i = floatingTexts.length - 1; i >= 0; i--) {
+      const ft = floatingTexts[i];
+      ft.y -= 1.5;
+      ft.alpha -= 0.025;
+      if (ft.alpha <= 0) {
+        floatingTexts.splice(i, 1);
+      } else {
+        ctx.globalAlpha = ft.alpha;
+        ctx.font = 'bold 24px sans-serif';
+        ctx.fillStyle = ft.color;
+        ctx.textAlign = 'center';
+        ctx.fillText(ft.text, ft.x, ft.y);
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    requestAnimationFrame(gameLoop);
+  }
+</script>
+</body>
+</html>
