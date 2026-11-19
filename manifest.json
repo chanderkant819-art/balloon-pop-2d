@@ -1,0 +1,19 @@
+{
+  "name": "Balloon Pop 2D",
+  "short_name": "Balloon Pop",
+  "description": "A fun and colorful 2D balloon popping arcade game for all ages.",
+  "start_url": "/balloon-pop-2d/",
+  "scope": "/balloon-pop-2d/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#38BDF8",
+  "theme_color": "#38BDF8",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3132/3132693.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
